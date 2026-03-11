@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth_padres, auth_hijos
+from app.routers import auth_padres
 
 app = FastAPI(
     title="TaskKey API",
