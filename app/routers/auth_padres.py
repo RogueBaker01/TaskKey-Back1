@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.schemas.padres import PadresRegister, PadresLogin, PadresResponse, TokenResponse
 from app.utils.security import hash_password, verify_password, create_access_token
 from app.database import get_db
+from app.utils.dependencies import get_current_user
 
 router = APIRouter(prefix = "/api/auth", tags=["autenticacion"])
 
@@ -39,14 +40,14 @@ async def login(padres: PadresLogin, conn=Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Correo o contraseña incorrecto")
 
     if not verify_password(padres.password, padre["password_hash"]):
-        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Correo o contraseña incorrecto")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Correo o contraseña incorrecto")
     #crea el token de autenticacion
     token = create_access_token(data={"sub": str(padre["id"]), "email": padre["email"]})
     return {
         "access_token": token,
         "token_type": "bearer",
         "padre": {
-            "id": padre["id "],
+            "id": padre["id"],
             "nombre": padre["nombre"],
             "apellido": padre["apellido"],
             "email": padre["email"],
@@ -55,17 +56,17 @@ async def login(padres: PadresLogin, conn=Depends(get_db)):
         },
     }
 
-@router.get("me_padre", response_model=UserResponse)
-def get_me_padre(conn=Depends(get_db), current_padre: dict = Depends(get_current_user)):
+@router.get("/me_padre", response_model=PadresResponse)
+def get_me_padre(conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
     cursor.execute("SELECT id, nombre, apellido, email, created_at FROM padres WHERE id = %s",
         (current_user["id"],),
     )
     user = cursor.fetchone()
-    cursor.close
+    cursor.close()
 
-    if not padre:
-        raise HTTPException(status_code = status.HTTP_404_NOT_FOUND, (current_user["id"],),)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Padre no encontrado")
     
     return {
         "id": user["id"],
