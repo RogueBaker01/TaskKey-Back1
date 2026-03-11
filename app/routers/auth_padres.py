@@ -15,7 +15,7 @@ async def register(padres: PadresRegister, conn=Depends(get_db)):
         cursor.close()
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed_password = hash_password(padres.password)
-    cursor.execute("INSERT INTO padres (nombre, apellido, email, password) VALUES (%s, %s, %s, %s)", (padres.nombre, padres.apellido, padres.email, hashed_password))
+    cursor.execute("INSERT INTO padres (nombre, apellido, email, hash_password) VALUES (%s, %s, %s, %s)", (padres.nombre, padres.apellido, padres.email, hashed_password))
     new_padre = cursor.fetchone()
     conn.commit()
     cursor.close()
