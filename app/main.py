@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, auth_hijos
+from app.routers import auth_padres, auth_hijos
 
 app = FastAPI(
     title="TaskKey API",
@@ -16,6 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 #routers
+app.include_router(auth_padres.router)
 
 # Root
 @app.get("/")
