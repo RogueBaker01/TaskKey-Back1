@@ -46,12 +46,12 @@ async def login(padres: PadresLogin, conn=Depends(get_db)):
         "access_token": token,
         "token_type": "bearer",
         "padre": {
-            "id" = padre["id "],
-            "nombre" = padre["nombre"],
-            "apellido" = padre["apellido"],
-            "email" = padre["email"],
-            "created_at" = padre["created_at"],
-            "updated_at" = padre["updated_at"]
+            "id": padre["id "],
+            "nombre": padre["nombre"],
+            "apellido": padre["apellido"],
+            "email": padre["email"],
+            "created_at": padre["created_at"],
+            "updated_at": padre["updated_at"]
         },
     }
 
