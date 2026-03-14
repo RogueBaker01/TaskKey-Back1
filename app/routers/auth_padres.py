@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.schemas.padres import PadresRegister, PadresLogin, PadresResponse, TokenResponse
+from app.schemas.padres import PadresRegister, PadresLogin, PadresResponse, PadresConHijosResponse, TokenResponse
 from app.utils.security import hash_password, verify_password, create_access_token
 from app.database import get_db
 from app.utils.dependencies import get_current_user
 
-router = APIRouter(prefix = "/api/auth", tags=["autenticacion"])
+router = APIRouter(prefix = "/auth_padres", tags=["autenticacion"])
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 #Funcion para registrar padres usando el esquema PadresRegister y devuelve el token de autenticacion
@@ -25,7 +25,7 @@ async def register(padres: PadresRegister, conn=Depends(get_db)):
     return {
         "access_token": token,
         "token_type": "bearer",
-        "padre": new_padre,
+        "padre": new_padre, 
     }
 
 @router.post("/login", response_model=TokenResponse)
@@ -56,21 +56,31 @@ async def login(padres: PadresLogin, conn=Depends(get_db)):
         },
     }
 
-@router.get("/me_padre", response_model=PadresResponse)
+@router.get("/me", response_model=PadresConHijosResponse)
 def get_me_padre(conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
-    cursor.execute("SELECT id, nombre, apellido, email, created_at FROM padres WHERE id = %s",
+    cursor.execute("SELECT id, nombre, apellido, email, created_at, updated_at FROM padres WHERE id = %s",
         (current_user["id"],),
     )
     user = cursor.fetchone()
-    cursor.close()
 
     if not user:
+        cursor.close()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Padre no encontrado")
     
+    # Obtener los hijos del padre
+    cursor.execute("SELECT id, nombre, apellido, fecha_nacimiento FROM children WHERE parent_id = %s",
+        (current_user["id"],),
+    )
+    hijos = cursor.fetchall()
+    cursor.close()
+
     return {
         "id": user["id"],
         "nombre": user["nombre"],
         "apellido": user["apellido"],
-        "email": user["email"]
+        "email": user["email"],
+        "created_at": user["created_at"],
+        "updated_at": user["updated_at"],
+        "hijos": hijos if hijos else []
     }
