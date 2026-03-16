@@ -3,7 +3,8 @@ from app.schemas.padres import PadresRegister, PadresLogin, PadresResponse, Padr
 from app.utils.security import hash_password, verify_password, create_access_token
 from app.database import get_db
 from app.utils.dependencies import get_current_user
-
+from datetime import datetime, timezone
+#datetime en formato utc para generalizarlo en cualquier zona horaria la app lo cambia a su formato local
 router = APIRouter(prefix = "/auth_padres", tags=["autenticacion"])
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -15,7 +16,7 @@ async def register(padres: PadresRegister, conn=Depends(get_db)):
         cursor.close()
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed_password = hash_password(padres.password)
-    cursor.execute("INSERT INTO padres (nombre, apellido, email, hash_password) VALUES (%s, %s, %s, %s)", (padres.nombre, padres.apellido, padres.email, hashed_password))
+    cursor.execute("INSERT INTO padres (nombre, apellido, email, hash_password,created_at,updated_at) VALUES (%s, %s, %s, %s,%s,%s)", (padres.nombre, padres.apellido, padres.email, hashed_password, datetime.now(timezone.utc),datetime.now(timezone.utc)))
     new_padre = cursor.fetchone()
     conn.commit()
     cursor.close()
@@ -37,7 +38,7 @@ async def login(padres: PadresLogin, conn=Depends(get_db)):
     cursor.close()
 
     if not padre:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Correo o contraseña incorrecto")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Correo o contraseña incorrecto")
 
     if not verify_password(padres.password, padre["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Correo o contraseña incorrecto")
