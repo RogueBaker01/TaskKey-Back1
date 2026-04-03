@@ -7,12 +7,14 @@ from typing import Optional
 class HijoCreate(BaseModel):
     nombre: str
     apellido: Optional[str] = None
+    genero: Optional[str] = None 
     fecha_nacimiento: Optional[date] = None
 
 # Esquema para actualizar un hijo
 class HijoUpdate(BaseModel):
     nombre: Optional[str] = None
     apellido: Optional[str] = None
+    genero: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
 
 # Esquema de respuesta basica de un hijo
@@ -21,6 +23,7 @@ class HijoResponse(BaseModel):
     parent_id: UUID
     nombre: str
     apellido: Optional[str] = None
+    genero: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     created_at: datetime
 

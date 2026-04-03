@@ -19,8 +19,8 @@ def crear_hijo(hijo: HijoCreate, conn=Depends(get_db), current_user: dict = Depe
     expira_en = datetime.now(timezone.utc) + timedelta(hours=24)
 
     cursor.execute(
-        "INSERT INTO children (parent_id, nombre, apellido, fecha_nacimiento, codigo_auth_hash, code_expires_at, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
-        (current_user["id"], hijo.nombre, hijo.apellido, hijo.fecha_nacimiento, codigo_hash, expira_en, datetime.now(timezone.utc))
+        "INSERT INTO children (parent_id, nombre, apellido, genero, fecha_nacimiento, codigo_auth_hash, code_expires_at, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+        (current_user["id"], hijo.nombre, hijo.apellido, hijo.genero, hijo.fecha_nacimiento, codigo_hash, expira_en, datetime.now(timezone.utc))
     )
     new_hijo = cursor.fetchone()
     conn.commit()
@@ -113,6 +113,9 @@ def editar_hijo(hijo_id: str, data: HijoUpdate, conn=Depends(get_db), current_us
     if data.apellido is not None:
         fields.append("apellido = %s")
         values.append(data.apellido)
+    if data.genero is not None:
+        fields.append("genero = %s")
+        values.append(data.genero)
     if data.fecha_nacimiento is not None:
         fields.append("fecha_nacimiento = %s")
         values.append(data.fecha_nacimiento)
