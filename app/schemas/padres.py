@@ -15,11 +15,16 @@ class PadresLogin(BaseModel):
     email: str
     password: str
 
+#Esquema para actualizar perfil del padre
+class PadresUpdate(BaseModel):
+    nombre: Optional[str] = None
+    apellido: Optional[str] = None
+
 #Esquema de respuesta de un hijo
 class HijoResponse(BaseModel):
     id: UUID
     nombre: str
-    apellido: str
+    apellido: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
 
     class Config:
