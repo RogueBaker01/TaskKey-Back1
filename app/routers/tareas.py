@@ -204,6 +204,18 @@ def cambiar_estado_asignacion(assignment_id: str, data: TaskAssignmentUpdateStat
         (data.status, completed_at, assignment_id)
     )
     updated_assignment = cursor.fetchone()
+
+    if data.status == "verified" and assignment["status"] != "verified":
+        cursor.execute("SELECT duration_hours, duration_minutes FROM tasks WHERE id = %s", (assignment["task_id"],))
+        task_info = cursor.fetchone()
+        if task_info:
+            minutos_ganados = (task_info.get("duration_hours") or 0) * 60 + (task_info.get("duration_minutes") or 0)
+            if minutos_ganados > 0:
+                cursor.execute(
+                    "UPDATE device_policies SET available_screen_time_minutes = available_screen_time_minutes + %s, updated_at = NOW() WHERE child_id = %s",
+                    (minutos_ganados, str(assignment["child_id"]))
+                )
+
     conn.commit()
     cursor.close()
 
