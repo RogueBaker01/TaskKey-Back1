@@ -20,9 +20,16 @@ def crear_hijo(hijo: HijoCreate, conn=Depends(get_db), current_user: dict = Depe
 
     cursor.execute(
         "INSERT INTO children (parent_id, nombre, apellido, genero, fecha_nacimiento, codigo_auth_hash, code_expires_at, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
-        (current_user["id"], hijo.nombre, hijo.apellido, hijo.genero, hijo.fecha_nacimiento, codigo_hash, expira_en, datetime.now(timezone.utc))
+        (current_user["id"], hijo.nombre, hijo.apellido or "", hijo.genero, hijo.fecha_nacimiento, codigo_hash, expira_en, datetime.now(timezone.utc))
     )
     new_hijo = cursor.fetchone()
+
+    # Generar política de dispositivo predeterminada
+    cursor.execute(
+        "INSERT INTO device_policies (child_id, available_screen_time_minutes, sleep_start_time, sleep_end_time, sleep_days, restricted_apps, created_at, updated_at) VALUES (%s, 0, '21:30:00', '07:30:00', 'Mon,Tue,Wed,Thu,Fri,Sat,Sun', '[]', %s, %s)",
+        (new_hijo["id"], datetime.now(timezone.utc), datetime.now(timezone.utc))
+    )
+
     conn.commit()
     cursor.close()
 
