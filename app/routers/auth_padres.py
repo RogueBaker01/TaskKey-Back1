@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from app.schemas.padres import PadresRegister, PadresLogin, PadresResponse, PadresConHijosResponse, PadresUpdate, TokenResponse
 from app.utils.security import hash_password, verify_password, create_access_token
 from app.database import get_db
 from app.utils.dependencies import get_current_user
 from datetime import datetime, timezone
+from app.utils.limiter import limiter
 
 #datetime en formato utc para generalizarlo en cualquier zona horaria la app lo cambia a su formato local
 router = APIRouter(prefix="/auth_padres", tags=["autenticacion"])
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/minute")
 #Funcion para registrar padres usando el esquema PadresRegister y devuelve el token de autenticacion
-async def register(padres: PadresRegister, conn=Depends(get_db)):
+async def register(request: Request, padres: PadresRegister, conn=Depends(get_db)):
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM padres WHERE email = %s", (padres.email,))
     if cursor.fetchone():
@@ -36,8 +38,9 @@ async def register(padres: PadresRegister, conn=Depends(get_db)):
     }
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 #Funcion para iniciar sesion de padres usando el esquema PadresLogin y devuelve el token de autenticacion
-async def login(padres: PadresLogin, conn=Depends(get_db)):
+async def login(request: Request, padres: PadresLogin, conn=Depends(get_db)):
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM padres WHERE email = %s", (padres.email,))
     padre = cursor.fetchone()
