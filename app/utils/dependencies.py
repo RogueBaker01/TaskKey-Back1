@@ -1,16 +1,14 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.security import verify_token
 
-#Esquema de autenticacion
-oauth2_scheme_padre = OAuth2PasswordBearer(tokenUrl="/api/auth_padres/login")
-oauth2_scheme_hijo = OAuth2PasswordBearer(tokenUrl="")
+# HTTPBearer muestra un campo simple "token" en Swagger UI en lugar del formulario OAuth2
+http_bearer = HTTPBearer(auto_error=True)
 
-
-def get_current_user(token: str = Depends(oauth2_scheme_padre)) -> dict:
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(http_bearer)) -> dict:
     
-    #Verfica el token regresa 401 si es no es valido
-    payload = verify_token(token)
+    # Verifica el token, regresa 401 si no es válido
+    payload = verify_token(credentials.credentials)
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -18,7 +16,7 @@ def get_current_user(token: str = Depends(oauth2_scheme_padre)) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    #Verifica que el token tenga un sub (id del usuario)
+    # Verifica que el token tenga un sub (id del usuario)
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(
@@ -29,10 +27,10 @@ def get_current_user(token: str = Depends(oauth2_scheme_padre)) -> dict:
 
     return {"id": user_id, "email": payload.get("email", "")}
 
-def get_current_child(token: str = Depends(oauth2_scheme_hijo)) -> dict:
+def get_current_child(credentials: HTTPAuthorizationCredentials = Depends(http_bearer)) -> dict:
     
-    #Verfica el token regresa 401 si es no es valido
-    payload = verify_token(token)
+    # Verifica el token, regresa 401 si no es válido
+    payload = verify_token(credentials.credentials)
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -40,7 +38,7 @@ def get_current_child(token: str = Depends(oauth2_scheme_hijo)) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    #Verifica que el token tenga un sub (id del usuario)
+    # Verifica que el token tenga un sub (id del usuario)
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(

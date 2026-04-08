@@ -27,3 +27,9 @@ class NotificacionResponse(NotificacionBase):
 
 class MarcarLeidasRequest(BaseModel):
     notificacion_ids: list[UUID]
+
+class NotificacionTestRequest(BaseModel):
+    tipo: Literal['TAREA_COMPLETADA', 'TIEMPO_LIMITE', 'TAREA_FALLIDA', 'META_SEMANAL', 'TAREA_CONFIRMADA'] = 'TAREA_COMPLETADA'
+    titulo: str = "Notificación de prueba"
+    mensaje: str = "Esta es una notificación de prueba enviada desde el backend."
+    data_extra: Optional[Dict[str, Any]] = None
