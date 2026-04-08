@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.services.notifications import enviar_notificacion
 from app.schemas.tareas import TaskCreate, TaskUpdate, TaskResponse, TaskAssignmentCreate, TaskAssignmentUpdateStatus, TaskAssignmentResponse, TaskWithAssignmentsResponse
 from app.database import get_db
 from app.utils.dependencies import get_current_user
@@ -219,4 +220,52 @@ def cambiar_estado_asignacion(assignment_id: str, data: TaskAssignmentUpdateStat
     conn.commit()
     cursor.close()
 
+    return updated_assignment
+
+@router.put("/asignaciones/{assignment_id}/estado/child", response_model=TaskAssignmentResponse)
+def cambiar_estado_asignacion_hijo(assignment_id: str, data: TaskAssignmentUpdateStatus, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """ Endpoint para que el HIJO marque su tarea como en progreso o completada. """
+    cursor = conn.cursor()
+    
+    # Validar que la asignación existe y pertenece al hijo
+    cursor.execute("SELECT ta.* FROM task_assignments ta WHERE ta.id = %s AND ta.child_id = %s", (assignment_id, current_user["id"]))
+    assignment = cursor.fetchone()
+    
+    if not assignment:
+        cursor.close()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asignación no encontrada o no te pertenece")
+        
+    estados_hijo = ["assigned", "in_progress", "completed"]
+    if data.status not in estados_hijo:
+        cursor.close()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"El hijo solo puede cambiar a: {estados_hijo}")
+
+    completed_at = datetime.now(timezone.utc) if data.status == "completed" else None
+
+    # Actualizar estado
+    cursor.execute(
+        "UPDATE task_assignments SET status = %s, completed_at = COALESCE(%s, completed_at) WHERE id = %s RETURNING *",
+        (data.status, completed_at, assignment_id)
+    )
+    updated_assignment = cursor.fetchone()
+
+    # == INICIO NOTIFICACION AL PADRE ==
+    if data.status == "completed" and assignment["status"] != "completed":
+        cursor.execute("SELECT parent_id FROM tasks WHERE id = %s", (assignment["task_id"],))
+        task = cursor.fetchone()
+        if task:
+            try:
+                enviar_notificacion(
+                    usuario_id=task["parent_id"],
+                    tipo="TAREA_COMPLETADA",
+                    titulo="Tarea Completada",
+                    mensaje="Tu hijo ha marcado una tarea como completada. Revisa la evidencia.",
+                    data_extra={"assignment_id": str(assignment_id)}
+                )
+            except Exception as e:
+                print(f"Error enviando notificacion: {e}")
+    # == FIN NOTIFICACION ==
+
+    conn.commit()
+    cursor.close()
     return updated_assignment

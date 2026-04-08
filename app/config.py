@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     ALLOWED_ORIGINS: str = "*"
-
+    AZURE_NH_CONNECTION_STRING: str
+    AZURE_NH_NAME: str
     class Config:
         env_file = ".env"
 
