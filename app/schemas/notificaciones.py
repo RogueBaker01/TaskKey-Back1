@@ -5,7 +5,7 @@ from datetime import datetime
 
 class DeviceTokenCreate(BaseModel):
     token: str
-    plataforma: Literal['android', 'ios']
+    plataforma: Literal['android', 'ios', 'expo']
 
 class NotificacionBase(BaseModel):
     tipo: Literal['TAREA_COMPLETADA', 'TIEMPO_LIMITE', 'TAREA_FALLIDA', 'META_SEMANAL', 'TAREA_CONFIRMADA']

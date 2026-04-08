@@ -50,6 +50,42 @@ def _parsear_connection_string(conn_str: str):
         endpoint += "/"
     return endpoint, parts.get("SharedAccessKeyName", ""), parts.get("SharedAccessKey", "")
 
+def _enviar_expo_push(tokens: list, titulo: str, mensaje: str, tipo: str, data_extra: Optional[Dict[str, Any]] = None):
+    EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+    
+    messages = [
+        {
+            "to": token,
+            "title": titulo,
+            "body": mensaje,
+            "sound": "default",
+            "data": {
+                "tipo": tipo,
+                **(data_extra or {})
+            }
+        }
+        for token in tokens
+    ]
+    
+    try:
+        response = requests.post(
+            EXPO_PUSH_URL,
+            json=messages,
+            headers={"Content-Type": "application/json", "Accept": "application/json"}
+        )
+        if response.status_code == 200:
+            results = response.json().get("data", [])
+            for i, result in enumerate(results):
+                if result.get("status") == "ok":
+                    logger.info(f"Expo Push enviada a {tokens[i][:20]}...")
+                else:
+                    logger.error(f"Expo Push rechazada para {tokens[i][:20]}...: {result}")
+        else:
+            logger.error(f"Error Expo Push API ({response.status_code}): {response.text}")
+    except Exception as e:
+        logger.error(f"Error HTTP comunicando con Expo Push: {e}")
+
+
 def enviar_notificacion(
     usuario_id: UUID, 
     tipo: str, 
@@ -83,64 +119,56 @@ def enviar_notificacion(
     finally:
         conn.close()
 
-    # Azure Notification Hubs
-    hub_name = settings.AZURE_NH_NAME
-    conn_str = settings.AZURE_NH_CONNECTION_STRING
+    # ── Separar tokens por plataforma ────────────────────────────────────────
+    expo_tokens   = [d['token'] for d in tokens_dispositivos if d['plataforma'] == 'expo']
+    native_tokens = [d for d in tokens_dispositivos if d['plataforma'] in ('android', 'ios')]
 
-    if not conn_str or not hub_name or "sb://" not in conn_str:
-        logger.warning("Faltan variables de Azure NH en .env, notificación guardada pero no se envió push.")
-        return True
+    # ── Canal 1: Expo Push Service ────────────────────────────────────────────
+    # Funciona sin configuración adicional (Expo Go, builds de desarrollo).
+    if expo_tokens:
+        _enviar_expo_push(expo_tokens, titulo, mensaje, tipo, data_extra)
 
-    endpoint, key_name, key_value = _parsear_connection_string(conn_str)
-    
-    # Endpoint para Direct Send (enviar directamente a un token de dispositivo)
-    url = f"{endpoint}{hub_name}/messages/?direct&api-version=2015-01"
-    auth_token = _generar_sas_token(endpoint, key_name, key_value)
-
-    for device in tokens_dispositivos:
-        plataforma = device['plataforma']
-        token = device['token']
-        
-        headers = {
-            "Authorization": auth_token,
-            "Content-Type": "application/json;charset=utf-8",
-            "ServiceBusNotification-DeviceHandle": token
-        }
-        
-        if plataforma == 'android':
-            headers["ServiceBusNotification-Format"] = "gcm"
-            payload = {
-                "data": {
-                    "tipo": tipo,
-                    "title": titulo,
-                    "body": mensaje,
-                    "extra": data_extra
+    # ── Canal 2: Azure Notification Hubs → FCM (Android) / APNs (iOS) ────────
+    # Configuración externa en el portal de Azure NH (sin cambios de código):
+    #   Android → Firebase Console → Project Settings → Cloud Messaging → Server Key → Azure NH
+    #   iOS     → developer.apple.com → Keys → APNs Key (.p8) → Azure NH
+    if native_tokens:
+        hub_name = settings.AZURE_NH_NAME
+        conn_str = settings.AZURE_NH_CONNECTION_STRING
+        if conn_str and hub_name and "sb://" in conn_str:
+            endpoint, key_name, key_value = _parsear_connection_string(conn_str)
+            url = f"{endpoint}{hub_name}/messages/?direct&api-version=2015-01"
+            auth_token = _generar_sas_token(endpoint, key_name, key_value)
+            for device in native_tokens:
+                plataforma = device['plataforma']
+                token = device['token']
+                headers = {
+                    "Authorization": auth_token,
+                    "Content-Type": "application/json;charset=utf-8",
+                    "ServiceBusNotification-DeviceHandle": token
                 }
-            }
-        elif plataforma == 'ios':
-            headers["ServiceBusNotification-Format"] = "apple"
-            payload = {
-                "aps": {
-                    "alert": {
-                        "title": titulo,
-                        "body": mensaje
+                if plataforma == 'android':
+                    headers["ServiceBusNotification-Format"] = "gcm"
+                    payload = {
+                        "data": {"tipo": tipo, "title": titulo, "body": mensaje, "extra": data_extra}
                     }
-                },
-                "tipo": tipo,
-                "extra": data_extra
-            }
-        else:
-            continue
-
-        # Realizar la petición POST a la nube
-        try:
-            response = requests.post(url, headers=headers, json=payload)
-            if response.status_code in (200, 201):
-                logger.info(f"Push enviada exitosamente a {plataforma} ({token[:10]}...)")
-            else:
-                logger.error(f"Fallo envío Push Azure ({response.status_code}): {response.text}")
-        except Exception as e:
-            logger.error(f"Error HTTP comunicando con Azure: {e}")
+                elif plataforma == 'ios':
+                    headers["ServiceBusNotification-Format"] = "apple"
+                    payload = {
+                        "aps": {"alert": {"title": titulo, "body": mensaje}},
+                        "tipo": tipo,
+                        "extra": data_extra
+                    }
+                else:
+                    continue
+                try:
+                    response = requests.post(url, headers=headers, json=payload)
+                    if response.status_code in (200, 201):
+                        logger.info(f"Push Azure NH enviada a {plataforma} ({token[:10]}...)")
+                    else:
+                        logger.error(f"Fallo Push Azure NH ({response.status_code}): {response.text}")
+                except Exception as e:
+                    logger.error(f"Error HTTP con Azure NH: {e}")
 
     return True
 
