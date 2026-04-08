@@ -79,7 +79,6 @@ def enviar_notificacion(
     except Exception as e:
         conn.rollback()
         logger.error(f"Error al guardar notificación: {e}")
-        conn.close()
         return False
     finally:
         conn.close()
@@ -153,7 +152,8 @@ def obtener_historial_notificaciones(usuario_id: UUID):
                 "SELECT * FROM notificaciones WHERE usuario_id = %s ORDER BY fecha_creacion DESC", 
                 (str(usuario_id),)
             )
-            return cur.fetchall()
+            # Convertimos a dict para que FastAPI pueda serializar correctamente con response_model
+            return [dict(row) for row in cur.fetchall()]
     finally:
         conn.close()
 
