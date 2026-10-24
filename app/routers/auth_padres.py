@@ -29,7 +29,7 @@ async def register(request: Request, padres: PadresRegister, conn=Depends(get_db
     cursor.close()
 
     #Crea el token
-    token = create_access_token(data={"sub": str(new_padre["id"]), "email": new_padre["email"]})
+    token = create_access_token(data={"sub": str(new_padre["id"]), "email": new_padre["email"], "role": "padre"})
 
     return {
         "access_token": token,
@@ -53,7 +53,7 @@ async def login(request: Request, padres: PadresLogin, conn=Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Correo o contraseña incorrecto")
     
     #crea el token de autenticacion
-    token = create_access_token(data={"sub": str(padre["id"]), "email": padre["email"]})
+    token = create_access_token(data={"sub": str(padre["id"]), "email": padre["email"], "role": "padre"})
     return {
         "access_token": token,
         "token_type": "bearer",

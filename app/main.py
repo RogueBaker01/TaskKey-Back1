@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth_padres, hijos, tareas, policies, notificaciones
+from app.routers import auth_padres, auth_hijos, hijos, tareas, policies, notificaciones
 from app.config import settings
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -24,6 +24,7 @@ app.add_middleware(
 )
 #routers
 app.include_router(auth_padres.router)
+app.include_router(auth_hijos.router)
 app.include_router(hijos.router)
 app.include_router(tareas.router)
 app.include_router(policies.router)

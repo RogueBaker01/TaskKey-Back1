@@ -25,6 +25,13 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(http_be
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Los tokens de hijo no pueden usarse en rutas de padre
+    if payload.get("role") == "child":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este token no tiene permisos de padre",
+        )
+
     return {"id": user_id, "email": payload.get("email", "")}
 
 def get_current_child(credentials: HTTPAuthorizationCredentials = Depends(http_bearer)) -> dict:
@@ -45,6 +52,13 @@ def get_current_child(credentials: HTTPAuthorizationCredentials = Depends(http_b
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Solo tokens emitidos para hijos pueden usar rutas de hijo
+    if payload.get("role") != "child":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este token no tiene permisos de hijo",
         )
 
     return {"id": user_id, "role": "child"}

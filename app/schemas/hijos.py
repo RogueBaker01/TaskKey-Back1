@@ -41,3 +41,13 @@ class CodigoVinculacionResponse(BaseModel):
     codigo: str
     expira_en: datetime
     mensaje: str
+
+# Esquema para el login del hijo (vinculacion de dispositivo con el codigo)
+class HijoLogin(BaseModel):
+    codigo: str
+
+# Esquema de respuesta del token de hijo
+class HijoTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    child: HijoResponse

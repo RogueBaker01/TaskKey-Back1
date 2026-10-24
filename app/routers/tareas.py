@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.services.notifications import enviar_notificacion
 from app.schemas.tareas import TaskCreate, TaskUpdate, TaskResponse, TaskAssignmentCreate, TaskAssignmentUpdateStatus, TaskAssignmentResponse, TaskWithAssignmentsResponse
 from app.database import get_db
-from app.utils.dependencies import get_current_user
+from app.utils.dependencies import get_current_user, get_current_child
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/tareas", tags=["tareas"])
@@ -223,12 +223,12 @@ def cambiar_estado_asignacion(assignment_id: str, data: TaskAssignmentUpdateStat
     return updated_assignment
 
 @router.put("/asignaciones/{assignment_id}/estado/child", response_model=TaskAssignmentResponse)
-def cambiar_estado_asignacion_hijo(assignment_id: str, data: TaskAssignmentUpdateStatus, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
+def cambiar_estado_asignacion_hijo(assignment_id: str, data: TaskAssignmentUpdateStatus, conn=Depends(get_db), current_child: dict = Depends(get_current_child)):
     """ Endpoint para que el HIJO marque su tarea como en progreso o completada. """
     cursor = conn.cursor()
     
     # Validar que la asignación existe y pertenece al hijo
-    cursor.execute("SELECT ta.* FROM task_assignments ta WHERE ta.id = %s AND ta.child_id = %s", (assignment_id, current_user["id"]))
+    cursor.execute("SELECT ta.* FROM task_assignments ta WHERE ta.id = %s AND ta.child_id = %s", (assignment_id, current_child["id"]))
     assignment = cursor.fetchone()
     
     if not assignment:
