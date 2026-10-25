@@ -62,3 +62,25 @@ def get_current_child(credentials: HTTPAuthorizationCredentials = Depends(http_b
         )
 
     return {"id": user_id, "role": "child"}
+
+def get_current_actor(credentials: HTTPAuthorizationCredentials = Depends(http_bearer)) -> dict:
+    """ Para rutas compartidas (p.ej. notificaciones) a las que puede entrar tanto un padre como un hijo. """
+
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido o expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    role = "child" if payload.get("role") == "child" else "padre"
+    return {"id": user_id, "role": role}

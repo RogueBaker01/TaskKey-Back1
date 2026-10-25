@@ -3,7 +3,7 @@ from typing import List
 from uuid import UUID
 from app.schemas.notificaciones import DeviceTokenCreate, NotificacionResponse, MarcarLeidasRequest, NotificacionTestRequest
 from app.services.notifications import registrar_device_token, obtener_historial_notificaciones, marcar_como_leidas, enviar_notificacion
-from app.utils.dependencies import get_current_user
+from app.utils.dependencies import get_current_user, get_current_actor
 
 router = APIRouter(
     prefix="/api/notificaciones",
@@ -13,7 +13,7 @@ router = APIRouter(
 @router.post("/token", status_code=status.HTTP_201_CREATED)
 def registrar_token(
     payload: DeviceTokenCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_actor)
 ):
     user_id = UUID(current_user["id"])
     try:
@@ -27,7 +27,7 @@ def registrar_token(
 
 @router.get("", response_model=List[NotificacionResponse])
 def get_notificaciones(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_actor)
 ):
     user_id = UUID(current_user["id"])
     try:
@@ -42,7 +42,7 @@ def get_notificaciones(
 @router.put("/leidas", status_code=status.HTTP_200_OK)
 def marcar_leidas(
     payload: MarcarLeidasRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_actor)
 ):
     try:
         marcar_como_leidas(payload.notificacion_ids)
