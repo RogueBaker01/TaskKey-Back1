@@ -250,6 +250,17 @@ def cambiar_estado_asignacion(assignment_id: str, data: TaskAssignmentUpdateStat
                     (minutos_ganados, str(assignment["child_id"]))
                 )
 
+        try:
+            enviar_notificacion(
+                usuario_id=assignment["child_id"],
+                tipo="TAREA_CONFIRMADA",
+                titulo="¡Misión confirmada!",
+                mensaje="Tu padre confirmó que completaste tu misión. ¡Buen trabajo!",
+                data_extra={"assignment_id": str(assignment_id)}
+            )
+        except Exception as e:
+            print(f"Error enviando notificacion: {e}")
+
     conn.commit()
     cursor.close()
 
