@@ -59,6 +59,39 @@ def listar_tareas(conn=Depends(get_db), current_user: dict = Depends(get_current
     return resultado
 
 
+@router.get("/mis-tareas", response_model=list[TaskWithAssignmentsResponse])
+def listar_mis_tareas(conn=Depends(get_db), current_child: dict = Depends(get_current_child)):
+    """ Endpoint para que el HIJO liste las tareas que le fueron asignadas. """
+    cursor = conn.cursor()
+    # Obtener solo las tareas que tienen una asignacion para este hijo
+    cursor.execute(
+        "SELECT t.* FROM tasks t JOIN task_assignments ta ON ta.task_id = t.id WHERE ta.child_id = %s ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC",
+        (current_child["id"],)
+    )
+    tasks = cursor.fetchall()
+
+    if not tasks:
+        cursor.close()
+        return []
+
+    # Obtener unicamente las asignaciones de este hijo para esas tareas
+    task_ids = tuple([t["id"] for t in tasks])
+    cursor.execute(
+        "SELECT * FROM task_assignments WHERE task_id IN %s AND child_id = %s",
+        (task_ids, current_child["id"])
+    )
+    assignments = cursor.fetchall()
+    cursor.close()
+
+    resultado = []
+    for t in tasks:
+        task_data = dict(t)
+        task_data["assignments"] = [a for a in assignments if a["task_id"] == t["id"]]
+        resultado.append(task_data)
+
+    return resultado
+
+
 @router.get("/{task_id}", response_model=TaskWithAssignmentsResponse)
 def obtener_tarea(task_id: str, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
