@@ -49,7 +49,7 @@ def test_marcar_leidas_accepts_child_token(client, child_token, monkeypatch):
     monkeypatch.setattr(
         notificaciones_router,
         "marcar_como_leidas",
-        lambda ids: called.setdefault("ids", ids),
+        lambda ids, usuario_id: called.update({"ids": ids, "usuario_id": usuario_id}),
     )
 
     response = client.put(

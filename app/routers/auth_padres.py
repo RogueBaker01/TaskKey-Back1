@@ -83,7 +83,7 @@ def get_me_padre(conn=Depends(get_db), current_user: dict = Depends(get_current_
     
     # Obtener los hijos del padre (columnas reales de la tabla children)
     cursor.execute(
-        "SELECT id, nombre, apellido, fecha_nacimiento FROM children WHERE parent_id = %s",
+        "SELECT id, nombre, apellido, fecha_nacimiento, avatar_id FROM children WHERE parent_id = %s",
         (current_user["id"],),
     )
     hijos = cursor.fetchall()

@@ -45,7 +45,7 @@ def marcar_leidas(
     current_user: dict = Depends(get_current_actor)
 ):
     try:
-        marcar_como_leidas(payload.notificacion_ids)
+        marcar_como_leidas(payload.notificacion_ids, UUID(current_user["id"]))
         return {"msg": "Notificaciones actualizadas a leídas"}
     except Exception as e:
         raise HTTPException(

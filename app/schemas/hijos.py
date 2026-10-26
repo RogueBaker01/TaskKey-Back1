@@ -26,6 +26,8 @@ class HijoResponse(BaseModel):
     genero: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     created_at: datetime
+    llaves_disponibles: int = 0
+    avatar_id: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from psycopg2.extras import RealDictCursor
 import json
 from uuid import UUID
 
-from app.database import get_db, get_connection
+from app.database import get_db
+from app.services.policies import ensure_device_policy
+import logging
+
+logger = logging.getLogger(__name__)
 from app.utils.dependencies import get_current_user
 from app.schemas.policies import DevicePolicyResponse, DevicePolicyUpdate
 
@@ -12,13 +16,30 @@ router = APIRouter(
     tags=["Policies"]
 )
 
+APP_CATALOG = [
+    {'id': '1', 'name': 'YouTube', 'category': 'Entretenimiento'},
+    {'id': '2', 'name': 'Netflix', 'category': 'Entretenimiento'},
+    {'id': '3', 'name': 'TikTok', 'category': 'Entretenimiento'},
+    {'id': '4', 'name': 'Disney+', 'category': 'Entretenimiento'},
+    {'id': '5', 'name': 'HBO Max', 'category': 'Entretenimiento'},
+    {'id': '6', 'name': 'Instagram', 'category': 'Redes sociales'},
+    {'id': '7', 'name': 'Facebook', 'category': 'Redes sociales'},
+    {'id': '8', 'name': 'Roblox', 'category': 'Juegos'},
+    {'id': '9', 'name': 'Subway Surfers', 'category': 'Juegos'},
+    {'id': '10', 'name': 'Geometry Dash', 'category': 'Juegos'},
+]
+
+@router.get('/catalogo/apps')
+def catalogo_apps(current_user: dict = Depends(get_current_user)):
+    return APP_CATALOG
+
+
 @router.get("/{child_id}", response_model=DevicePolicyResponse)
-def get_device_policy(child_id: UUID, current_user: dict = Depends(get_current_user)):
-    conn = get_connection()
+def get_device_policy(child_id: UUID, current_user: dict = Depends(get_current_user), conn=Depends(get_db)):
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verificar propiedad del hijo
-            cur.execute("SELECT id FROM children WHERE id = %s AND parent_id = %s", (str(child_id), str(current_user["id"])))
+            cur.execute("SELECT id FROM children WHERE id = %s AND parent_id = %s FOR UPDATE", (str(child_id), str(current_user["id"])))
             if not cur.fetchone():
                 raise HTTPException(status_code=403, detail="No tienes acceso a este hijo")
 
@@ -32,20 +53,21 @@ def get_device_policy(child_id: UUID, current_user: dict = Depends(get_current_u
                 )
                 policy = cur.fetchone()
             
+            conn.commit()
             return policy
     except HTTPException:
+        conn.rollback()
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
+    except Exception:
+        conn.rollback()
+        logger.exception("No se pudo consultar la política")
+        raise HTTPException(status_code=500, detail="No se pudo consultar la política")
 
 @router.put("/{child_id}", response_model=DevicePolicyResponse)
-def update_device_policy(child_id: UUID, payload: DevicePolicyUpdate, current_user: dict = Depends(get_current_user)):
-    conn = get_connection()
+def update_device_policy(child_id: UUID, payload: DevicePolicyUpdate, current_user: dict = Depends(get_current_user), conn=Depends(get_db)):
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT id FROM children WHERE id = %s AND parent_id = %s", (str(child_id), str(current_user["id"])))
+            cur.execute("SELECT id FROM children WHERE id = %s AND parent_id = %s FOR UPDATE", (str(child_id), str(current_user["id"])))
             if not cur.fetchone():
                 raise HTTPException(status_code=403, detail="No tienes acceso a editar este hijo")
 
@@ -53,6 +75,9 @@ def update_device_policy(child_id: UUID, payload: DevicePolicyUpdate, current_us
             if not update_data:
                 raise HTTPException(status_code=400, detail="No se proveyeron datos para actualizar")
 
+            if 'restricted_apps' in update_data and not set(update_data['restricted_apps']).issubset({a['id'] for a in APP_CATALOG}):
+                raise HTTPException(400, 'Aplicación no disponible en el catálogo')
+            ensure_device_policy(cur, child_id)
             query_parts = []
             values = []
             for key, value in update_data.items():
@@ -76,9 +101,9 @@ def update_device_policy(child_id: UUID, payload: DevicePolicyUpdate, current_us
             return updated_policy
 
     except HTTPException:
-        raise
-    except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
+        raise
+    except Exception:
+        conn.rollback()
+        logger.exception("No se pudo guardar la política")
+        raise HTTPException(status_code=500, detail="No se pudo guardar la política")

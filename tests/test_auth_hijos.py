@@ -24,7 +24,8 @@ def _hijo_row(**overrides):
 
 
 def test_login_hijo_success(client, fake_conn):
-    fake_conn.cursor_obj._results = [[_hijo_row()]]
+    # 1) fetchall candidatos  2) fetchone del UPDATE atomico que invalida el codigo
+    fake_conn.cursor_obj._results = [[_hijo_row()], {"id": HIJO_ID}]
 
     response = client.post("/auth_hijos/login", json={"codigo": CODIGO_PLANO})
 

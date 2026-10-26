@@ -71,7 +71,8 @@ def _enviar_expo_push(tokens: list, titulo: str, mensaje: str, tipo: str, data_e
         response = requests.post(
             EXPO_PUSH_URL,
             json=messages,
-            headers={"Content-Type": "application/json", "Accept": "application/json"}
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            timeout=(3, 10)
         )
         if response.status_code == 200:
             results = response.json().get("data", [])
@@ -162,7 +163,7 @@ def enviar_notificacion(
                 else:
                     continue
                 try:
-                    response = requests.post(url, headers=headers, json=payload)
+                    response = requests.post(url, headers=headers, json=payload, timeout=(3, 10))
                     if response.status_code in (200, 201):
                         logger.info(f"Push Azure NH enviada a {plataforma} ({token[:10]}...)")
                     else:
@@ -185,7 +186,7 @@ def obtener_historial_notificaciones(usuario_id: UUID):
     finally:
         conn.close()
 
-def marcar_como_leidas(notificacion_ids: List[UUID]):
+def marcar_como_leidas(notificacion_ids: List[UUID], usuario_id: UUID):
     if not notificacion_ids: return
     conn = get_connection()
     try:
@@ -193,8 +194,8 @@ def marcar_como_leidas(notificacion_ids: List[UUID]):
             # Cast a UUID str
             ids_str = tuple(str(uid) for uid in notificacion_ids)
             cur.execute(
-                "UPDATE notificaciones SET leida = TRUE WHERE id IN %s",
-                (ids_str,)
+                "UPDATE notificaciones SET leida = TRUE WHERE id IN %s AND usuario_id = %s",
+                (ids_str, str(usuario_id))
             )
             conn.commit()
     finally:

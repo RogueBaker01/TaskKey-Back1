@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.services.notifications import enviar_notificacion
-from app.schemas.tareas import TaskCreate, TaskUpdate, TaskResponse, TaskAssignmentCreate, TaskAssignmentUpdateStatus, TaskAssignmentResponse, TaskWithAssignmentsResponse
+from app.schemas.tareas import TaskCreate, TaskUpdate, TaskResponse, TaskAssignmentCreate, TaskAssignmentUpdateStatus, TaskAssignmentResponse, TaskWithAssignmentsResponse, ProgresoResponse
 from app.database import get_db
+from app.services.policies import ensure_device_policy
 from app.utils.dependencies import get_current_user, get_current_child
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter(prefix="/tareas", tags=["tareas"])
 
@@ -11,10 +12,10 @@ router = APIRouter(prefix="/tareas", tags=["tareas"])
 def crear_tarea(task: TaskCreate, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
     
-    query = "INSERT INTO tasks (parent_id, title, description, due_date, due_time, reward_keys, duration_hours, duration_minutes, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *"
+    query = "INSERT INTO tasks (parent_id, title, description, due_date, due_time, reward_keys, duration_hours, duration_minutes, color, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *"
     values = (
         current_user["id"], task.title, task.description, 
-        task.due_date, task.due_time, task.reward_keys, task.duration_hours, task.duration_minutes,
+        task.due_date, task.due_time, task.reward_keys, task.duration_hours, task.duration_minutes, task.color,
         datetime.now(timezone.utc), datetime.now(timezone.utc)
     )
     
@@ -92,6 +93,57 @@ def listar_mis_tareas(conn=Depends(get_db), current_child: dict = Depends(get_cu
     return resultado
 
 
+@router.get("/mi-progreso", response_model=ProgresoResponse)
+def obtener_mi_progreso(conn=Depends(get_db), current_child: dict = Depends(get_current_child)):
+    """ Progreso y racha del hijo, calculados a partir de sus asignaciones verificadas. """
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT completed_at FROM task_assignments WHERE child_id = %s AND status = 'verified' AND completed_at IS NOT NULL ORDER BY completed_at ASC",
+        (current_child["id"],)
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+
+    rows = [{"completed_at": row["completed_at"].replace(tzinfo=timezone.utc)
+             if row["completed_at"].tzinfo is None else row["completed_at"].astimezone(timezone.utc)} for row in rows]
+    # Dias unicos (en UTC) en los que se verifico al menos una tarea
+    dias_completados = sorted({r["completed_at"].date() for r in rows})
+
+    total_completadas = len(rows)
+    hoy = datetime.now(timezone.utc).date()
+    hace_7_dias = hoy - timedelta(days=6)
+    completadas_semana = sum(1 for r in rows if hace_7_dias <= r["completed_at"].date() <= hoy)
+
+    # Racha mas larga: dias consecutivos mas largos dentro del historial
+    racha_mas_larga = 0
+    racha_en_curso = 0
+    dia_anterior = None
+    for dia in dias_completados:
+        if dia_anterior is not None and (dia - dia_anterior).days == 1:
+            racha_en_curso += 1
+        else:
+            racha_en_curso = 1
+        racha_mas_larga = max(racha_mas_larga, racha_en_curso)
+        dia_anterior = dia
+
+    # Racha actual: solo cuenta si el ultimo dia completado fue hoy o ayer
+    racha_actual = 0
+    if dias_completados and 0 <= (hoy - dias_completados[-1]).days <= 1:
+        racha_actual = 1
+        for i in range(len(dias_completados) - 1, 0, -1):
+            if (dias_completados[i] - dias_completados[i - 1]).days == 1:
+                racha_actual += 1
+            else:
+                break
+
+    return ProgresoResponse(
+        total_completadas=total_completadas,
+        completadas_semana=completadas_semana,
+        racha_actual=racha_actual,
+        racha_mas_larga=racha_mas_larga,
+    )
+
+
 @router.get("/{task_id}", response_model=TaskWithAssignmentsResponse)
 def obtener_tarea(task_id: str, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
@@ -125,16 +177,19 @@ def actualizar_tarea(task_id: str, data: TaskUpdate, conn=Depends(get_db), curre
     fields = []
     values = []
 
+    if "color" in data.model_fields_set:
+        fields.append("color = %s")
+        values.append(data.color)
     if data.title is not None:
         fields.append("title = %s")
         values.append(data.title)
-    if data.description is not None:
+    if "description" in data.model_fields_set:
         fields.append("description = %s")
         values.append(data.description)
-    if data.due_date is not None:
+    if "due_date" in data.model_fields_set:
         fields.append("due_date = %s")
         values.append(data.due_date)
-    if data.due_time is not None:
+    if "due_time" in data.model_fields_set:
         fields.append("due_time = %s")
         values.append(data.due_time)
     if data.reward_keys is not None:
@@ -166,25 +221,26 @@ def actualizar_tarea(task_id: str, data: TaskUpdate, conn=Depends(get_db), curre
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_tarea(task_id: str, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
-    cursor = conn.cursor()
-    cursor.execute(
-        "DELETE FROM tasks WHERE id = %s AND parent_id = %s RETURNING id",
-        (task_id, current_user["id"])
-    )
-    deleted = cursor.fetchone()
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT id FROM tasks WHERE id = %s AND parent_id = %s FOR UPDATE", (task_id, current_user["id"]))
+        if not cursor.fetchone():
+            raise HTTPException(404, "Tarea no encontrada")
+        # Bloquear todas las asignaciones, incluidas las que están siendo aprobadas.
+        cursor.execute("SELECT id, status FROM task_assignments WHERE task_id = %s ORDER BY id FOR UPDATE", (task_id,))
+        if any(row["status"] == "verified" for row in cursor.fetchall()):
+            raise HTTPException(409, "No se puede eliminar una tarea con premios acreditados")
+        cursor.execute("DELETE FROM task_assignments WHERE task_id = %s", (task_id,))
+        cursor.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
     conn.commit()
-    cursor.close()
-    
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada")
     return None
+
 
 @router.post("/{task_id}/asignar", response_model=TaskAssignmentResponse, status_code=status.HTTP_201_CREATED)
 def asignar_tarea(task_id: str, data: TaskAssignmentCreate, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
     
     # Validar que la tarea es del padre
-    cursor.execute("SELECT id FROM tasks WHERE id = %s AND parent_id = %s", (task_id, current_user["id"]))
+    cursor.execute("SELECT id FROM tasks WHERE id = %s AND parent_id = %s FOR UPDATE", (task_id, current_user["id"]))
     if not cursor.fetchone():
         cursor.close()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada")
@@ -213,12 +269,29 @@ def asignar_tarea(task_id: str, data: TaskAssignmentCreate, conn=Depends(get_db)
     return assignment
 
 
+@router.delete("/asignaciones/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def desasignar_tarea(assignment_id: str, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """ Endpoint para que el padre desasigne una tarea de un hijo. """
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT ta.id, ta.status FROM task_assignments ta JOIN tasks t ON ta.task_id = t.id WHERE ta.id = %s AND t.parent_id = %s FOR UPDATE OF ta",
+            (assignment_id, current_user["id"]),
+        )
+        assignment = cursor.fetchone()
+        if not assignment:
+            raise HTTPException(404, "Asignación no encontrada")
+        if assignment["status"] == "verified":
+            raise HTTPException(409, "No se puede desasignar una tarea con premios acreditados")
+        cursor.execute("DELETE FROM task_assignments WHERE id = %s", (assignment_id,))
+    conn.commit()
+    return None
+
 @router.put("/asignaciones/{assignment_id}/estado", response_model=TaskAssignmentResponse)
 def cambiar_estado_asignacion(assignment_id: str, data: TaskAssignmentUpdateStatus, conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
     
     # Validar que la asignación existe y pertenece a una tarea del padre actual
-    cursor.execute("SELECT ta.* FROM task_assignments ta JOIN tasks t ON ta.task_id = t.id WHERE ta.id = %s AND t.parent_id = %s", (assignment_id, current_user["id"]))
+    cursor.execute("SELECT ta.* FROM task_assignments ta JOIN tasks t ON ta.task_id = t.id WHERE ta.id = %s AND t.parent_id = %s FOR UPDATE OF ta", (assignment_id, current_user["id"]))
     
     assignment = cursor.fetchone()
     if not assignment:
@@ -230,6 +303,15 @@ def cambiar_estado_asignacion(assignment_id: str, data: TaskAssignmentUpdateStat
         cursor.close()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Estado inválido. Debe ser uno de {estados_validos}")
 
+    if assignment['status'] == 'verified':
+        cursor.close()
+        if data.status != 'verified':
+            raise HTTPException(409, 'Una tarea verificada no se puede reabrir')
+        return assignment
+    if data.status == 'verified' and assignment['status'] != 'completed':
+        cursor.close()
+        raise HTTPException(409, 'El hijo debe completar la tarea antes de verificarla')
+
     completed_at = datetime.now(timezone.utc) if data.status in ["completed", "verified"] else None
 
     # Actualizar estado
@@ -240,16 +322,31 @@ def cambiar_estado_asignacion(assignment_id: str, data: TaskAssignmentUpdateStat
     updated_assignment = cursor.fetchone()
 
     if data.status == "verified" and assignment["status"] != "verified":
-        cursor.execute("SELECT duration_hours, duration_minutes FROM tasks WHERE id = %s", (assignment["task_id"],))
+        cursor.execute("SELECT duration_hours, duration_minutes, reward_keys FROM tasks WHERE id = %s", (assignment["task_id"],))
         task_info = cursor.fetchone()
         if task_info:
             minutos_ganados = (task_info.get("duration_hours") or 0) * 60 + (task_info.get("duration_minutes") or 0)
             if minutos_ganados > 0:
+                cursor.execute("SELECT id FROM children WHERE id = %s FOR UPDATE", (str(assignment["child_id"]),))
+                ensure_device_policy(cursor, assignment["child_id"])
                 cursor.execute(
                     "UPDATE device_policies SET available_screen_time_minutes = available_screen_time_minutes + %s, updated_at = NOW() WHERE child_id = %s",
                     (minutos_ganados, str(assignment["child_id"]))
                 )
 
+            llaves_ganadas = task_info.get("reward_keys") or 0
+            if llaves_ganadas > 0:
+                cursor.execute(
+                    "UPDATE children SET llaves_disponibles = llaves_disponibles + %s WHERE id = %s",
+                    (llaves_ganadas, str(assignment["child_id"]))
+                )
+
+            cursor.execute(
+                "UPDATE task_assignments SET earned_keys = %s, earned_minutes = %s WHERE id = %s",
+                (llaves_ganadas, minutos_ganados, assignment_id)
+            )
+
+        conn.commit()
         try:
             enviar_notificacion(
                 usuario_id=assignment["child_id"],
@@ -272,7 +369,7 @@ def cambiar_estado_asignacion_hijo(assignment_id: str, data: TaskAssignmentUpdat
     cursor = conn.cursor()
     
     # Validar que la asignación existe y pertenece al hijo
-    cursor.execute("SELECT ta.* FROM task_assignments ta WHERE ta.id = %s AND ta.child_id = %s", (assignment_id, current_child["id"]))
+    cursor.execute("SELECT ta.* FROM task_assignments ta WHERE ta.id = %s AND ta.child_id = %s FOR UPDATE", (assignment_id, current_child["id"]))
     assignment = cursor.fetchone()
     
     if not assignment:
@@ -284,14 +381,24 @@ def cambiar_estado_asignacion_hijo(assignment_id: str, data: TaskAssignmentUpdat
         cursor.close()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"El hijo solo puede cambiar a: {estados_hijo}")
 
+    if assignment['status'] == 'verified':
+        cursor.close()
+        raise HTTPException(409, 'Una tarea verificada no se puede modificar')
+
+    if assignment['status'] == 'completed' and data.status == 'completed':
+        cursor.close()
+        return assignment
+
     completed_at = datetime.now(timezone.utc) if data.status == "completed" else None
 
-    # Actualizar estado
+    # Actualizar estado (y la evidencia de foto, si el hijo mando una)
     cursor.execute(
-        "UPDATE task_assignments SET status = %s, completed_at = COALESCE(%s, completed_at) WHERE id = %s RETURNING *",
-        (data.status, completed_at, assignment_id)
+        "UPDATE task_assignments SET status = %s, completed_at = %s, evidencia_foto = COALESCE(%s, evidencia_foto) WHERE id = %s RETURNING *",
+        (data.status, completed_at, data.evidencia_foto, assignment_id)
     )
     updated_assignment = cursor.fetchone()
+
+    conn.commit()
 
     # == INICIO NOTIFICACION AL PADRE ==
     if data.status == "completed" and assignment["status"] != "completed":

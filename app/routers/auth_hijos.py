@@ -12,7 +12,7 @@ router = APIRouter(prefix="/auth_hijos", tags=["autenticacion_hijos"])
 @router.post("/login", response_model=HijoTokenResponse)
 @limiter.limit("5/minute")
 # Funcion para que el hijo vincule su dispositivo usando el codigo generado por el padre
-async def login(request: Request, data: HijoLogin, conn=Depends(get_db)):
+def login(request: Request, data: HijoLogin, conn=Depends(get_db)):
     cursor = conn.cursor()
     cursor.execute(
         "SELECT * FROM children WHERE codigo_auth_hash IS NOT NULL AND code_expires_at > %s",
@@ -31,9 +31,12 @@ async def login(request: Request, data: HijoLogin, conn=Depends(get_db)):
 
     # El codigo es de un solo uso: se invalida una vez vinculado el dispositivo
     cursor.execute(
-        "UPDATE children SET codigo_auth_hash = NULL, code_expires_at = NULL WHERE id = %s",
-        (hijo["id"],)
+        "UPDATE children SET codigo_auth_hash = NULL, code_expires_at = NULL WHERE id = %s AND codigo_auth_hash = %s AND code_expires_at > %s RETURNING id",
+        (hijo["id"], hijo["codigo_auth_hash"], datetime.now(timezone.utc))
     )
+    if not cursor.fetchone():
+        cursor.close()
+        raise HTTPException(status_code=401, detail="Código inválido, expirado o ya utilizado")
     conn.commit()
     cursor.close()
 
