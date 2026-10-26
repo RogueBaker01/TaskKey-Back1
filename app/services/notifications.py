@@ -1,7 +1,6 @@
 import json
 import logging
 from uuid import UUID
-from datetime import datetime
 from typing import Optional, Dict, Any, List
 import requests
 import time
@@ -102,9 +101,7 @@ def enviar_notificacion(
             cur.execute("INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, data_extra) VALUES (%s, %s, %s, %s, %s) RETURNING id",
                 (str(usuario_id), tipo, titulo, mensaje, data_json)
             )
-            result = cur.fetchone()
-            if result:
-                notificacion_id = dict(result)['id']  # Type hint fix
+            cur.fetchone()
 
             # Buscar tokens del usuario para enviarle la push
             cur.execute("SELECT token, plataforma FROM device_tokens WHERE usuario_id = %s", (str(usuario_id),))

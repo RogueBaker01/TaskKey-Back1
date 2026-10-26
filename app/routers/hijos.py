@@ -181,5 +181,5 @@ def generar_codigo(hijo_id: str, conn=Depends(get_db), current_user: dict = Depe
         "hijo_id": hijo_id,
         "codigo": codigo_plano,
         "expira_en": expira_en,
-        "mensaje": f"Código generado. Expira en 24 horas.",
+        "mensaje": "Código generado. Expira en 24 horas.",
     }

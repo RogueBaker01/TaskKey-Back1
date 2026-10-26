@@ -32,12 +32,18 @@ class FakeCursor:
     solo registra la llamada para poder inspeccionarla en los tests.
     """
 
-    def __init__(self, results=None):
+    def __init__(self, results=None, error_on_execute=None):
         self._results = list(results or [])
         self.queries = []
+        # Si se fija, la siguiente llamada a execute() lanza esta excepcion
+        # en vez de ejecutar, simulando un error real de psycopg2 (p.ej. una
+        # columna que no existe porque no se corrio una migracion).
+        self.error_on_execute = error_on_execute
 
     def execute(self, query, params=None):
         self.queries.append((query, params))
+        if self.error_on_execute is not None:
+            raise self.error_on_execute
 
     def _next(self):
         if not self._results:
@@ -68,6 +74,7 @@ class FakeConnection:
         self.cursor_obj = FakeCursor(results)
         self.committed = False
         self.closed = False
+        self.rolled_back = False
 
     def cursor(self, *args, **kwargs):
         return self.cursor_obj
@@ -76,7 +83,7 @@ class FakeConnection:
         self.committed = True
 
     def rollback(self):
-        pass
+        self.rolled_back = True
 
     def close(self):
         self.closed = True
@@ -96,6 +103,27 @@ def client(fake_conn):
     app.dependency_overrides[get_db] = override_get_db
     try:
         yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture
+def client_like_production(fake_conn):
+    """
+    Igual que `client`, pero con raise_server_exceptions=False. El TestClient
+    por defecto vuelve a lanzar cualquier excepcion no manejada hacia el test
+    (para que no se te pasen bugs mientras programas); eso es util casi
+    siempre, pero esconde como se comporta el servidor real con uvicorn, que
+    SIEMPRE devuelve la respuesta del exception_handler en vez de crashear.
+    Usar este fixture para probar justamente ese caso.
+    """
+
+    def override_get_db():
+        yield fake_conn
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        yield TestClient(app, raise_server_exceptions=False)
     finally:
         app.dependency_overrides.pop(get_db, None)
 
