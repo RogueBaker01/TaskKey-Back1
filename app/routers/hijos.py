@@ -26,7 +26,7 @@ def crear_hijo(hijo: HijoCreate, conn=Depends(get_db), current_user: dict = Depe
 
     # Generar política de dispositivo predeterminada
     cursor.execute(
-        "INSERT INTO device_policies (child_id, available_screen_time_minutes, sleep_start_time, sleep_end_time, sleep_days, restricted_apps, created_at, updated_at) VALUES (%s, 0, '21:30:00', '07:30:00', 'Mon,Tue,Wed,Thu,Fri,Sat,Sun', '[]', %s, %s)",
+        "INSERT INTO device_policies (child_id, available_screen_time_minutes, sleep_start_time, sleep_end_time, sleep_days, restricted_apps, created_at, updated_at) VALUES (%s, 0, '21:30:00', '07:30:00', 'Lun,Mar,Mie,Jue,Vie,Sab,Dom', '[]', %s, %s)",
         (new_hijo["id"], datetime.now(timezone.utc), datetime.now(timezone.utc))
     )
 
@@ -52,16 +52,9 @@ def listar_hijos(conn=Depends(get_db), current_user: dict = Depends(get_current_
 
     resultado = []
     for hijo in hijos:
-        # Determinar estado de vinculacion: si no tiene codigo o ya expiro → vinculado
-        tiene_codigo = hijo.get("codigo_auth_hash") is not None
-        code_expirado = False
-        if hijo.get("code_expires_at"):
-            # Comparar sin timezone si la BD no guarda con tz
-            code_expirado = hijo["code_expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
-        
-        # Si tiene codigo activo (no expirado) → pendiente; si no tiene o expiró → vinculado
-        estado = "pendiente" if (tiene_codigo and not code_expirado) else "vinculado"
-        
+        # Un código expirado sigue pendiente: nunca significa que se vinculó.
+        estado = "pendiente" if hijo.get("codigo_auth_hash") is not None else "vinculado"
+
         resultado.append({
             **hijo,
             "estado_vinculacion": estado,
@@ -84,11 +77,7 @@ def obtener_hijo(hijo_id: str, conn=Depends(get_db), current_user: dict = Depend
     if not hijo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hijo no encontrado")
 
-    tiene_codigo = hijo.get("codigo_auth_hash") is not None
-    code_expirado = False
-    if hijo.get("code_expires_at"):
-        code_expirado = hijo["code_expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
-    estado = "pendiente" if (tiene_codigo and not code_expirado) else "vinculado"
+    estado = "pendiente" if hijo.get("codigo_auth_hash") is not None else "vinculado"
 
     return {
         **hijo,
@@ -192,5 +181,5 @@ def generar_codigo(hijo_id: str, conn=Depends(get_db), current_user: dict = Depe
         "hijo_id": hijo_id,
         "codigo": codigo_plano,
         "expira_en": expira_en,
-        "mensaje": f"Código generado. Expira en 24 horas.",
+        "mensaje": "Código generado. Expira en 24 horas.",
     }

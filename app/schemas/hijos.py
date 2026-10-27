@@ -26,6 +26,8 @@ class HijoResponse(BaseModel):
     genero: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     created_at: datetime
+    llaves_disponibles: int = 0
+    avatar_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -41,3 +43,13 @@ class CodigoVinculacionResponse(BaseModel):
     codigo: str
     expira_en: datetime
     mensaje: str
+
+# Esquema para el login del hijo (vinculacion de dispositivo con el codigo)
+class HijoLogin(BaseModel):
+    codigo: str
+
+# Esquema de respuesta del token de hijo
+class HijoTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    child: HijoResponse

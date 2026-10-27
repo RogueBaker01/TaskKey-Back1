@@ -13,6 +13,7 @@ def get_connection():
         user=settings.DB_USER,
         password=settings.DB_PASSWORD,
         cursor_factory=RealDictCursor,
+        connect_timeout=10,
     )
 
 
@@ -21,5 +22,8 @@ def get_db():
     conn = get_connection()
     try:
         yield conn
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
